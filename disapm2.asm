@@ -208,7 +208,7 @@ proc timerHandler
 	jz	.finish
 	stdcall getLoadCycleCount,szBuffer	;getting the new LCC value
 	cmp	eax,[lastLCC]			;if new LCC greater than last measure, then activate our magic
-	jbe	.finish
+	jna	.finish
 	mov	[lastLCC],eax
 	call	disableapm
 	cinvoke wsprintf,wszBuffer,_LCCFmt,[lastLCC]
