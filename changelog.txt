@@ -1,0 +1,5 @@
+Changelog for Disable-APM
+-------------------------
+
+v 2.1 beta
++ There can be only one. Only one instance of the programme.

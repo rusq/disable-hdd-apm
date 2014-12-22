@@ -17,7 +17,7 @@
 ;    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
-STRVERSION equ '2.0 beta'
+STRVERSION equ '2.1 beta'
 
 ;How often to check for LCC changes (in minutes)
 AUTOTIMER = 5
@@ -85,3 +85,6 @@ struct NOTIFYICONDATA2
        guidItem GUID
        hBalloonIcon dd ?
 ends
+
+DEVICE_NOTIFY_SERVICE_HANDLE = 1
+DEVICE_NOTIFY_WINDOW_HANDLE = 0

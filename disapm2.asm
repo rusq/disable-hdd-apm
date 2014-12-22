@@ -19,6 +19,9 @@
 ; Reference:
 ; http://stackoverflow.com/questions/7008738/how-get-hdd-current-load-info-in-windows
 ; http://msdn.microsoft.com/en-us/library/windows/desktop/aa363216(v=vs.85).aspx
+; Power management:
+; http://msdn.microsoft.com/en-us/library/windows/desktop/aa373223(v=vs.85).aspx
+; http://msdn.microsoft.com/en-us/library/windows/desktop/aa373163(v=vs.85).aspx
 
 format PE GUI 5.0
 
@@ -32,6 +35,19 @@ section '.text' code readable executable
 entry $
 	invoke	GetModuleHandle,0
 	mov	[hInstance],eax
+
+	invoke	CreateMutex,0,FALSE,_mutex		;Creating mutex
+	mov	[hMutex],eax
+	invoke	GetLastError
+	cmp	eax,ERROR_ALREADY_EXISTS		;or already exists
+	jne	@f
+
+	invoke	MessageBox,0,_errAR,0,MB_ICONERROR+MB_OK  ;say ho
+	jmp	end_loop
+
+  @@:
+	cmp	[hMutex],0
+	jz	error
 
 	;checking if ATA drives are available
 	call	getPhysDrives
@@ -106,7 +122,11 @@ proc WindowProc uses ebx esi edi, hwnd,wmsg,wparam,lparam
      @@:
 	call	tray
 
-	jmp	.processed
+	;Registering for power messages
+	;invoke RegisterPowerSettingsNotification,[hwnd],,DEVICE_NOTIFY_WINDOW_HANDLE
+
+	jmp    .processed
+	;jmp     .switch_auto
   .wmtimer:
 	call	timerHandler
 	jmp	.processed
@@ -120,6 +140,8 @@ proc WindowProc uses ebx esi edi, hwnd,wmsg,wparam,lparam
 	je	.dbl
 	cmp	eax,BN_CLICKED shl 16+IDM_MENU_AUTO
 	je	.switch_auto
+	cmp	eax,BN_CLICKED shl 16+IDM_MENU_NOTIF
+	je	.switch_notif
 	cmp	eax,BN_CLICKED shl 16+IDC_AUTO
 	je	.auto
 	cmp	eax,BN_CLICKED shl 16+IDC_DISABLENOW
@@ -136,7 +158,7 @@ proc WindowProc uses ebx esi edi, hwnd,wmsg,wparam,lparam
 	jmp	.processed
 
     .switch_auto:
-	call	getautostate
+	stdcall getstate,IDC_AUTO
 	jnc	@f
 	invoke	SendDlgItemMessage,[hwnd],IDC_AUTO,BM_SETCHECK,BST_UNCHECKED,0
 	jmp	.auto
@@ -144,6 +166,15 @@ proc WindowProc uses ebx esi edi, hwnd,wmsg,wparam,lparam
 	invoke	SendDlgItemMessage,[hwnd],IDC_AUTO,BM_SETCHECK,BST_CHECKED,0
     .auto:
 	call	automode
+	jmp	.processed
+
+    .switch_notif:
+	stdcall getstate,IDC_NONOTIF
+	jnc	@f
+	invoke	SendDlgItemMessage,[hwnd],IDC_NONOTIF,BM_SETCHECK,BST_UNCHECKED,0
+	jmp	.processed
+     @@:
+	invoke	SendDlgItemMessage,[hwnd],IDC_NONOTIF,BM_SETCHECK,BST_CHECKED,0
 	jmp	.processed
 
     .disablenow:
@@ -192,6 +223,7 @@ proc WindowProc uses ebx esi edi, hwnd,wmsg,wparam,lparam
 	invoke	Shell_NotifyIcon,NIM_DELETE,nid
     @@:
 	invoke	EndDialog,[hwnd],0
+	invoke	CloseHandle,[hMutex]
 	invoke	PostQuitMessage,0
   .processed:
 	xor	eax,eax
@@ -287,6 +319,12 @@ proc showtip uses edi esi, lpwszInfo,lpwszInfoTitle,dwTimeout,icn
 	cmp	[bNotify],TRUE
 	jne	.finish
 
+	cmp	[icn],NIIF_ERROR	;important notifications are shown disregarding (NO_NOTIFICATIONS) check-box
+	je	@f
+
+	stdcall getstate,IDC_NONOTIF
+	jc	.finish
+  @@:
 	;calculate string sizes:
 	;szInfo:
 	mov	esi,[lpwszInfo]
@@ -354,8 +392,8 @@ proc traymenu uses edi,hwnd:DWORD
 	invoke	InsertMenuItem,[hMenu],-1,TRUE,edi
 
 	;second menu item (autodisable)
-	call	getautostate
-	jnc	 @f
+	stdcall getstate,IDC_AUTO
+	jnc	@f
 	mov	[mii.fState],MFS_CHECKED
 	jmp	.add2
       @@:
@@ -363,6 +401,18 @@ proc traymenu uses edi,hwnd:DWORD
       .add2:
 	mov	[mii.wID],IDM_MENU_AUTO
 	mov	[mii.dwTypeData],_menu3
+	invoke	InsertMenuItem,[hMenu],-1,TRUE,edi
+
+	stdcall getstate,IDC_NONOTIF
+	jnc	@f
+	mov	[mii.fState],MFS_CHECKED
+	jmp	.add3
+      @@:
+	mov	[mii.fState],MFS_UNCHECKED
+
+      .add3:
+	mov	[mii.wID],IDM_MENU_NOTIF
+	mov	[mii.dwTypeData],_menu4
 	invoke	InsertMenuItem,[hMenu],-1,TRUE,edi
 
 	;separator
@@ -373,8 +423,9 @@ proc traymenu uses edi,hwnd:DWORD
 	;disable now
 	mov	[mii.fMask],MIIM_STRING+MIIM_ID
 	mov	[mii.wID],IDC_DISABLENOW
-	mov	[mii.dwTypeData],_menu4
+	mov	[mii.dwTypeData],_menu5
 	invoke	InsertMenuItem,[hMenu],-1,TRUE,edi
+
 
 	;separator
 	mov	[mii.fMask],MIIM_FTYPE
@@ -385,7 +436,7 @@ proc traymenu uses edi,hwnd:DWORD
 	;exit
 	mov	[mii.fMask],MIIM_STRING+MIIM_ID
 	mov	[mii.wID],IDC_EXIT
-	mov	[mii.dwTypeData],_menu5
+	mov	[mii.dwTypeData],_menu6
 	invoke	InsertMenuItem,[hMenu],-1,TRUE,edi
 
 	;http://msdn.microsoft.com/en-us/library/windows/desktop/ms648002(v=vs.85).aspx
@@ -432,7 +483,7 @@ endp
 
 ; Automatic mode manipulation
 proc automode
-	call	getautostate
+	stdcall getstate,IDC_AUTO
 	jnc	.autooff
 	;
 	;turning on the timer
@@ -520,11 +571,13 @@ proc disableapm
 	ret
 endp
 
+
 ; returns the checkbox state in carry-flag.
 ; Carry set - checked
 ; Carry not set - unchecked
-proc getautostate
-	invoke	SendDlgItemMessage,[hWnd],IDC_AUTO,BM_GETCHECK,0,0
+
+proc getstate	dlgItemId
+	invoke	SendDlgItemMessage,[hWnd],[dlgItemId],BM_GETCHECK,0,0
 	cmp	eax,BST_CHECKED
 	jne	.not_checked
 	stc
@@ -577,15 +630,15 @@ proc addDrivesToCombo uses ebx esi
 
   .finish:
 	invoke	SendDlgItemMessage,[hWnd],IDC_DRIVE,CB_GETCOUNT,0,0	;check if there are any records
-	or	eax,eax 						;if not report an error (and then shutdown from main code)
-	jz	.error
+	or	eax,eax 						;if not, exit (eax=0)
+	jz	.ret
 	invoke	SendDlgItemMessage,[hWnd],IDC_DRIVE,CB_SETCURSEL,0,0	;selecting the first item
 	call	combobreaker						;to set LCC value
 	mov	eax,TRUE
 	jmp	.ret
 
-  .error:
-	xor	eax,eax
+; .error:
+;       xor     eax,eax
   .ret:
 	ret
 
@@ -765,6 +818,7 @@ section '.data' data readable writeable
   _NoATA	TCHAR 'No fixed drives found. Aborting.',0
   _NotSupp	TCHAR 'Drive(s) found but none are supported.',0
   _EpicFail	TCHAR 'Epic Fail',0
+  _errAR	TCHAR 'Already running',0
   _error	TCHAR 'Startup failed.',0
   ; Other strings
   _LCCNa	TCHAR 'N/A',0		; LCC not available
@@ -773,12 +827,18 @@ section '.data' data readable writeable
   _AboutTxt	TCHAR 'HDD APM Disabler v.',STRVERSION,13,10,\
 		      '(c) 2012 gilyazov@live.com',13,10,\
 		      'Licensed under GPL',0
+  ;registry entries
+  _RegPath	TCHAR 'Software\GilyazovR\DisAPM',0
+
   ;menu items
   _menu1 TCHAR 'Restore',0
   _menu2 TCHAR 'Hide',0
   _menu3 TCHAR 'Autodisable',0
-  _menu4 TCHAR 'Disable Now!',0
-  _menu5 TCHAR 'Exit',0
+  _menu4 TCHAR 'Keep quiet',0
+  _menu5 TCHAR 'Disable Now!',0
+  _menu6 TCHAR 'Exit',0
+  ;Mutex
+  _mutex      TCHAR 'DA88ff88fadd17',0
 
 
 
@@ -790,6 +850,7 @@ section '.data' data readable writeable
   hWnd		dd ?
   hInstance	dd ?
   hIcon 	dd ?
+  hMutex	dd ?
   ; Other:
   bNotify	dd ?	;boolean, TRUE when icon is in tray
   bytes_count	dd ?
@@ -822,16 +883,18 @@ section '.rsrc' resource data readable
   IDI_MAIN	= 101
   IDM_MENU	= 102
 
-  IDC_DISABLENOW	= 150
-  IDC_HIDE	= 151
-  IDC_EXIT	= 152
-  IDC_DRIVE	= 153
-  IDC_CURLCC	= 154
-  IDC_AUTO	= 155
-  IDC_ABOUT	= 156
+  IDC_DISABLENOW	= 150	;disable now button
+  IDC_HIDE	= 151		;hide button
+  IDC_EXIT	= 152		;exit button
+  IDC_DRIVE	= 153		;drive selection drop-down list
+  IDC_CURLCC	= 154	;current LCC edit-box
+  IDC_AUTO	= 155	;auto check box
+  IDC_ABOUT	= 156	;about button
+  IDC_NONOTIF	= 157	;switch off notifications checkbox
 
   IDM_MENU_RESTORE	=160
   IDM_MENU_AUTO 	=161
+  IDM_MENU_NOTIF	= 162
 
   WM_MYMESSAGE	= WM_USER+1
   IDD_MAIN	= 37
@@ -878,14 +941,15 @@ section '.rsrc' resource data readable
 	
 
   dialog disapm,'Disable HDD APM',1,1,150,84,WS_VISIBLE + WS_CAPTION + DS_CENTER + WS_SYSMENU+DS_SETFONT,0,0,'MS Shell Dlg',8
-    dialogitem 'BUTTON','Disable APM Now!',IDC_DISABLENOW,78,36,72,15,WS_CHILDWINDOW+WS_VISIBLE+WS_TABSTOP+BS_DEFPUSHBUTTON
-    dialogitem 'BUTTON','Automatic mode',IDC_AUTO,3,54,90,9,WS_CHILDWINDOW+WS_VISIBLE+WS_TABSTOP+BS_AUTOCHECKBOX
+    dialogitem 'BUTTON','Disable APM Now!',IDC_DISABLENOW,75,36,78,15,WS_CHILDWINDOW+WS_VISIBLE+WS_TABSTOP+BS_DEFPUSHBUTTON
+    dialogitem 'BUTTON','Automatic mode',IDC_AUTO,3,54,65,9,WS_CHILDWINDOW+WS_VISIBLE+WS_TABSTOP+BS_AUTOCHECKBOX
+    dialogitem 'BUTTON','Disable notifications',IDC_NONOTIF,75,54,90,9,WS_CHILDWINDOW+WS_VISIBLE+WS_TABSTOP+BS_AUTOCHECKBOX
     dialogitem 'BUTTON','Hide',IDC_HIDE,3,66,72,15,WS_CHILDWINDOW+WS_VISIBLE+WS_TABSTOP+BS_PUSHBUTTON
     dialogitem 'BUTTON','Exit',IDC_EXIT,75,66,72,15,WS_CHILDWINDOW+WS_VISIBLE+WS_TABSTOP+BS_PUSHBUTTON
     dialogitem 'STATIC','Drive',-1,3,3,54,9,WS_CHILDWINDOW+WS_VISIBLE
     dialogitem 'COMBOBOX','',IDC_DRIVE,3,12,144,39,WS_CHILDWINDOW+WS_VISIBLE+WS_TABSTOP+CBS_DROPDOWNLIST
     dialogitem 'STATIC','Load-Cycle Count value',-1,3,27,87,9,WS_CHILDWINDOW+WS_VISIBLE
-    dialogitem 'EDIT','',IDC_CURLCC,3,36,72,15,WS_CHILD+WS_VISIBLE+ES_READONLY,WS_EX_CLIENTEDGE
+    dialogitem 'EDIT','',IDC_CURLCC,3,36,71,15,WS_CHILD+WS_VISIBLE+ES_READONLY,WS_EX_CLIENTEDGE
   enddialog
 
   resdata man
