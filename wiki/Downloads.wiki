@@ -3,6 +3,13 @@
 
 Download current version binary: http://goo.gl/8qSDKF
 
-This link pointed to a Google Drive folder, from there, you need to download `Disable-APM.zip` file, unzip and run. It's simple is this - no installation needed.
+==Instructions==
+
+This link points to a Google Drive folder. You might:
+  * Download `Disable-APM.zip` file
+  * Unzip; and
+  * Run.
+
+No installation needed.
 
 Current binary version is: *2.1 beta* 
