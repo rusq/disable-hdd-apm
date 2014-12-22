@@ -1,0 +1,6 @@
+#labels Featured
+=Download current version binaries for Windows=
+
+Download current version binary: http://goo.gl/8qSDKF
+
+Current binary version is: 2.1 *beta* 
