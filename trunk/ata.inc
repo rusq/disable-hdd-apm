@@ -17,6 +17,7 @@
 ;    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
+
 BROADCAST_QUERY_DENY	   = $424D5144
 PBT_APMQUERYSUSPEND	   = $00
 WM_POWERBROADCAST	   = $218
@@ -136,6 +137,8 @@ ATA_FLAGS_DATA_OUT	   = $04
 ATA_FLAGS_48BIT_COMMAND    = $08
 
 DRIVE_HEAD_REG	= 0xA0
+
+ERROR_ALREADY_EXISTS  =  0xB7
 
 struct ATA_PASS_THROUGH_EX
 	Length			dw ?

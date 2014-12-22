@@ -1,0 +1,4 @@
+TODO for Disable-APM
+- Issue #1:
+	o Implement CLI
+	o Implement autorun
