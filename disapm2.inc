@@ -1,7 +1,7 @@
 ;
 ; Disable HDD APM tray version. Stops your drive from clicking (excessive drive head parking)
 ;
-;    Copyright (C) 2012 Gilyazov Rustam <gilyazov@live.com>
+;    Copyright (C) 2012 Gilyazov Rustam
 ;
 ;    This program is free software: you can redistribute it and/or modify
 ;    it under the terms of the GNU General Public License as published by
